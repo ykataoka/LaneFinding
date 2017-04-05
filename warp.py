@@ -17,20 +17,30 @@ def corners_unwarp(img, nx, ny, mtx, dist):
         gray = img
 
     # 4 corners in the image coordinate
-    src = np.float32([[270, 675],
-                      [1041, 675],
-                      [684, 450],
-                      [600, 450]])
+    src = np.float32([[600, 450],
+                      [685, 450],
+                      [1050, 690],
+                      [250, 690]])
 
+    # 4 corners in the image coordinate (image 2 next lane)
+    src = np.float32([[535, 450],
+                      [760, 450],
+                      [1280, 720],
+                      [0, 720]])
+    
     # 4 corners in the warped coordinate
 #    dst = np.float32([[275, 671],
 #                      [1033, 671],
 #                      [1033, 488],
 #                      [275, 488]])
     # 4 corners in the warped coordinate (big)
-    offset_x = 300
-    offset_y = 100
+    offset_x = 150
+    offset_y = 30
     img_size = (gray.shape[1], gray.shape[0])
+#    dst = np.float32([[offset_x, offset_y],
+#                      [img_size[0]-offset_x, offset_y],
+#                      [img_size[0]-offset_x, img_size[1]-offset_y],
+#                      [offset_x, img_size[1]-offset_y]])
     dst = np.float32([[offset_x, offset_y],
                       [img_size[0]-offset_x, offset_y],
                       [img_size[0]-offset_x, img_size[1]-offset_y],
@@ -44,6 +54,13 @@ def corners_unwarp(img, nx, ny, mtx, dist):
     scaled_img = np.uint8(255*img)  # necessary for warpPerspective
     warped = cv2.warpPerspective(scaled_img, M, img_size)
 
+    # debug
+#    plt.imshow(img, cmap='gray')
+#    plt.show()
+
+#    plt.imshow(warped, cmap='gray')
+#    plt.show()
+    
     # Return the resulting image and matrix
     return warped, M, Minv
 

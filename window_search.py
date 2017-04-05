@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import cv2
-np.set_printoptions(threshold=np.inf)
+#np.set_printoptions(threshold=np.inf)
 
 
 def window_mask(width, height, img_ref, center, level):
@@ -27,21 +27,21 @@ def find_window_centroids(image, window_width, window_height, margin):
     @desc : find the centroids at each level
     """
     # Store the (left,right) window centroid positions per level
-    window_centroids = []
+    window_centroids = []  # [(l_center, r_center), ...]
+    out_centroids = []  # [(y, l_center, r_center), ...] can be None
 
     # Create our window template that we will use for convolutions
     window = np.ones(window_width)
 
-    # 1. find the two starting positions for the left & right lane
-    # and then np.convolve the vertical image slice with the window
-    # template
+    # find the two starting positions for the left & right lane and 
+    # then np.convolve the vertical image slice with the window template
 
     # Sum quarter bottom of image to get slice (shape = (Y-720, X-1280))
-    upperY = int(3*image.shape[0]/4)  # look at quarter bottom image
+    upperY = int(2*image.shape[0]/4)  # look at quarter bottom image
     thresX = int(image.shape[1]/2)
 
     l_sum = np.sum(image[upperY:, :thresX], axis=0)
-    l_center = np.argmax(np.convolve(window, l_sum)) - window_width/2  # ?
+    l_center = np.argmax(np.convolve(window, l_sum)) - window_width/2
 
     r_sum = np.sum(image[upperY:, thresX:], axis=0)
     r_center = np.argmax(np.convolve(window, r_sum)) - window_width/2 \
@@ -52,7 +52,7 @@ def find_window_centroids(image, window_width, window_height, margin):
 
     # Go through each layer looking for max pixel locations
     num_level = (int)(image.shape[0]/window_height)
-    for level in range(1, num_level+1):
+    for level in range(1, num_level):
 
         # convolve the window into the vertical slice of the image
         lowerX = int(image.shape[0]-(level+1)*window_height)
@@ -84,13 +84,20 @@ def find_window_centroids(image, window_width, window_height, margin):
         else:
             r_center = np.argmax(conv_signal[r_min_index:r_max_index]) \
                        + r_min_index - offset
-            
 
         # Add what we found for that layer
         window_centroids.append((l_center, r_center))
 
-    return window_centroids
+#    # if the data is equivalent to *_center, remove the data
+#    out_centroids = []
+#    for center in window_centroids:
+#        if (center[0] == l_center) | (center[1] == r_center):
+#            pass
+#        else:
+#            out_centroids.append(center)
+#    return out_centroids
 
+    return window_centroids
 
 def find_lanes(image, centroids, window_width, window_height):
     # If we found any window centers
@@ -115,9 +122,14 @@ def find_lanes(image, centroids, window_width, window_height):
                                  centroids[level][1],
                                  level)
 
+            # If the masked place has no value, simply skip
+            if (image*l_mask).sum() > 5000:
+                l_points[(l_points == 255) | ((l_mask == 1))] = 255
+
+            if (image*r_mask).sum() > 5000:
+                r_points[(r_points == 255) | ((r_mask == 1))] = 255
+
             # Add graphic points from window mask here to total pixels found
-            l_points[(l_points == 255) | ((l_mask == 1))] = 255
-            r_points[(r_points == 255) | ((r_mask == 1))] = 255
 
         # Draw the results
         # add both left and right window pixels together
@@ -156,7 +168,7 @@ if __name__ == '__main__':
 
     # window settings
     window_width = 50
-    window_height = 80  # Break image into 9 vertical layers (height 720)
+    window_height = 40  # Break image into 9 vertical layers (height 720)
     margin = 100  # slide window width for searching
 
     # Find the centroids for each window
@@ -164,7 +176,7 @@ if __name__ == '__main__':
                                              window_width,
                                              window_height,
                                              margin)
-
+    
     # find lane path
     img_lane, img_both = find_lanes(warped, window_centroids,
                                     window_width, window_height)
