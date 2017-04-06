@@ -48,11 +48,13 @@ def find_window_centroids(image, window_width, window_height, margin):
                + int(image.shape[1]/2)
 
     # Add what we found for the first layer
-    window_centroids.append((l_center, r_center))
+#    window_centroids.append((l_center, r_center))
 
     # Go through each layer looking for max pixel locations
     num_level = (int)(image.shape[0]/window_height)
-    for level in range(1, num_level):
+    l_center_init = None
+    r_center_init = None
+    for level in range(0, num_level):
 
         # convolve the window into the vertical slice of the image
         lowerX = int(image.shape[0]-(level+1)*window_height)
@@ -88,6 +90,12 @@ def find_window_centroids(image, window_width, window_height, margin):
         # Add what we found for that layer
         window_centroids.append((l_center, r_center))
 
+        # save init center data
+        if l_center_init == None:
+            l_center_init = l_center
+        if r_center_init == None:
+            r_center_init = r_center
+
 #    # if the data is equivalent to *_center, remove the data
 #    out_centroids = []
 #    for center in window_centroids:
@@ -97,7 +105,7 @@ def find_window_centroids(image, window_width, window_height, margin):
 #            out_centroids.append(center)
 #    return out_centroids
 
-    return window_centroids
+    return [window_centroids, l_center_init, r_center_init]
 
 def find_lanes(image, centroids, window_width, window_height):
     # If we found any window centers
@@ -146,7 +154,7 @@ def find_lanes(image, centroids, window_width, window_height):
         warpage = np.array(cv2.merge((image, image, image)), np.uint8)
 
         # overlay the orignal road image with window results
-        mixed = cv2.addWeighted(warpage, 1, template, 0.5, 0.0)
+        mixed = cv2.addWeighted(warpage, 0.7, template, 0.5, 0.0)
 
     # If no window centers found, just display orginal road image
     else:

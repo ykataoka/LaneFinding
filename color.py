@@ -37,6 +37,26 @@ def HLS_thresh(img, color='S', thresh=(90, 255)):
         target = hls[:, :, 2]
 
     binary = np.zeros_like(target)
+    binary[(target >= thresh[0]) & (target <= thresh[1])] = 1
+
+    return binary
+
+
+def HSV_thresh(img, color='S', thresh=(90, 255)):
+    """
+    @desc : Define a function that extracts selected color channel
+    @param : img - [BGR] 
+    @thresh : lower_bound, upper_bound e.g., H : (15, 100)
+    """
+    hls = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    if color == 'H':
+        target = hls[:, :, 0]  # [0,179]
+    elif color == 'S':
+        target = hls[:, :, 1]  # [0,255]
+    elif color == 'V':
+        target = hls[:, :, 2]  # [0,255]
+
+    binary = np.zeros_like(target)
     binary[(target > thresh[0]) & (target <= thresh[1])] = 1
 
     return binary

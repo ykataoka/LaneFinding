@@ -34,8 +34,8 @@ def corners_unwarp(img, nx, ny, mtx, dist):
 #                      [275, 488]])
 
     # 4 corners in the warped coordinate (big)
-    offset_x = 150
-    offset_y = 30
+    offset_x = 100
+    offset_y = 0
     img_size = (gray.shape[1], gray.shape[0])
     dst = np.float32([[offset_x, offset_y],
                       [img_size[0]-offset_x, offset_y],
