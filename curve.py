@@ -52,6 +52,11 @@ def find_quadcoeff_lane(img):
         else:
             pass
 
+    # Check the availability
+    if (len(l_plotX) == 0) | (len(r_plotX) == 0):
+        return [None]*6
+
+
     # Fit a second order polynomial to pixel positions in each fake lane line
     plotY = np.array(range(0, 720, 1))
 
@@ -93,10 +98,6 @@ def find_radius(l_fit, r_fit, y_axis):
 
 
 def convert_radius(l_x, r_x, l_y, r_y):
-    print(l_x.shape)
-    print(r_x.shape)
-    print(l_y.shape)
-    print(r_y.shape)
 
     # Define conversions in x and y from pixels space to meters
     ym_per_pix = 30 / 720  # meters per pixel in y dimension

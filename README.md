@@ -1,11 +1,6 @@
-##Writeup Template
-###You can use this file as a template for your writeup if you want to submit it as a markdown file, but feel free to use some other method and submit a pdf if you prefer.
+# Lane Finding using Computer Vision by Yasuyuki Kataoka
 
----
-
-**Advanced Lane Finding Project**
-
-The goals / steps of this project are the following:
+## The goals / steps of this project
 
 * Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.
 * Apply a distortion correction to raw images.
@@ -15,81 +10,104 @@ The goals / steps of this project are the following:
 * Determine the curvature of the lane and vehicle position with respect to center.
 * Warp the detected lane boundaries back onto the original image.
 * Output visual display of the lane boundaries and numerical estimation of lane curvature and vehicle position.
+* [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
 
 [//]: # (Image References)
 
-[image1]: ./examples/undistort_output.png "Undistorted"
-[image2]: ./test_images/test1.jpg "Road Transformed"
-[image3]: ./examples/binary_combo_example.jpg "Binary Example"
+[image_org]: ./examples/straight_lines1.jpg "original"
+[image_undist]: ./examples/straight_lines1_undistort.jpg "undistortion"
+[example_calib_org]:  ./examples/calibration1.jpg "calibration"
+[example_calib_undist]: ./examples/calibration1_undistort.jpg "calibration_undistort"
+[image_binary]: ./examples/threshold_binary.png "Binary Example"
 [image4]: ./examples/warped_straight_lines.jpg "Warp Example"
 [image5]: ./examples/color_fit_lines.jpg "Fit Visual"
 [image6]: ./examples/example_output.jpg "Output"
 [video1]: ./project_video.mp4 "Video"
 
-
 ## Code
+* P4.py - main code
 * calibration.py - dump calibration ddata for undistortion
-* 
+* color.py - RGB and HLS analytics
+* curve.py - find radius and quadratic representation for lane curve
+* sobel.py - edge detection using derivative filter(sobel)
+* warp.py - convert image coordinate and bird-eye coordinate
+* window_serach.py - find lane based on bird-eye image
 
-
-## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
-###Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
 
 ---
-###Writeup / README
+### Camera Calibration
 
-####1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
+#### How it works
 
-You're reading it!
-###Camera Calibration
+I start by preparing "object points", which will be the (x, y, z)
+coordinates of the chessboard corners in the world. Here I am assuming
+the chessboard is fixed on the (x, y) plane at z=0, such that the
+object points are the same for each calibration image.  Thus, `objp`
+is just a replicated array of coordinates, and `objpoints` will be
+appended with a copy of it every time I successfully detect all
+chessboard corners in a test image.  `imgpoints` will be appended with
+the (x, y) pixel position of each of the corners in the image plane
+with each successful chessboard detection.
 
-####1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
+I then used the output `objpoints` and `imgpoints` to compute the
+camera calibration and distortion coefficients using the
+`cv2.calibrateCamera()` function.  The calibration parameter computed
+here is saved by pickle. In the main code(P4.py), simply load pickle
+file to get the parameter. I applied this distortion correction to the
+test image using the `cv2.undistort()` function and obtained this
+result:
 
-The code for this step is contained in the first code cell of the IPython notebook located in "./examples/example.ipynb" (or in lines # through # of the file called `some_file.py`).  
+The code for this step is contained in calibration.py.
 
-I start by preparing "object points", which will be the (x, y, z) coordinates of the chessboard corners in the world. Here I am assuming the chessboard is fixed on the (x, y) plane at z=0, such that the object points are the same for each calibration image.  Thus, `objp` is just a replicated array of coordinates, and `objpoints` will be appended with a copy of it every time I successfully detect all chessboard corners in a test image.  `imgpoints` will be appended with the (x, y) pixel position of each of the corners in the image plane with each successful chessboard detection.  
+Original Image              |  Undistorted Image
+:-------------------------:|:-------------------------:
+![alt text][example_calib_org]  |  ![alt text][example_calib_undist]
 
-I then used the output `objpoints` and `imgpoints` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function.  I applied this distortion correction to the test image using the `cv2.undistort()` function and obtained this result: 
 
-![alt text][image1]
+### Pipeline (single images)
 
-###Pipeline (single images)
+#### 1. Undistortion I apply the distortion correction obtained the
+calibration process.  One of the test images like this one. In this
+example, the difference seems like very slight. But distortion affects
+the images around corner.
 
-####1. Provide an example of a distortion-corrected image.
-To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
-![alt text][image2]
-####2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
+Original Image              |  Undistorted Image
+:-------------------------:|:-------------------------:
+![alt text][image_org]  |  ![alt text][image_undist]
 
-![alt text][image3]
 
-####3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
+#### 2. Thresholded binary image (Color transforms, Gradients and combnations of them)
 
-The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
+One of the test images like this one.  The color thresholding steps
+ are described in `color.py`.  The gradient thresholding steps are
+ described in `sobel.py`.  The combination logics are described in
+ `P4.py` line around 135.
 
-```
-src = np.float32(
-    [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-    [((img_size[0] / 6) - 10), img_size[1]],
-    [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
-dst = np.float32(
-    [[(img_size[0] / 4), 0],
-    [(img_size[0] / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), 0]])
+![alt text][image_binary]
 
-```
+In the end, I used a combination of color and gradient thresholds to
+generate a binary image. I used the simple white ratio logic to
+determine the best combination pattern.
+
+#### 3. Perspective Transform
+
+The perspective transform function is desribed in `warp.py`.
+
+I chose the hardcode the source and destination points by looking at
+straight example image with the effort to cover the src image more. In
+this way, even though the line is close right/left edge, the
+transoformation can work. Then, I tweaked top 2 corner points a bit so
+that two lines will be parallel in bird-eye view.
+
 This resulted in the following source and destination points:
 
 | Source        | Destination   | 
 |:-------------:|:-------------:| 
-| 585, 460      | 320, 0        | 
-| 203, 720      | 320, 720      |
-| 1127, 720     | 960, 720      |
-| 695, 460      | 960, 0        |
+| 565, 460      | 150, 30        | 
+| 720, 450      | 1130, 30      |
+| 1280, 720     | 1130, 690      |
+| 0, 720        | 150, 690        |
 
-I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
 
 ![alt text][image4]
 
