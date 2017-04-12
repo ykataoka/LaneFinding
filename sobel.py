@@ -13,6 +13,8 @@ def abs_sobel_thresh(img, orient='x', thresh_min=0, thresh_max=255):
     if img.shape[-1] == 3:
         # Convert to grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    elif np.max(img) == 1:
+        gray = img*255
     else:
         gray = img
 
@@ -48,6 +50,8 @@ def mag_thresh(img, sobel_kernel=3, mag_thresh=(0, 255)):
     if img.shape[-1] == 3:
         # Convert to grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    elif np.max(img) == 1:
+        gray = img*255
     else:
         gray = img
 
@@ -62,10 +66,16 @@ def mag_thresh(img, sobel_kernel=3, mag_thresh=(0, 255)):
     scale_factor = np.max(gradmag) / 255
     gradmag = (gradmag/scale_factor).astype(np.uint8)
 
+#    plt.imshow(gradmag, cmap='gray')
+#    plt.show()
+
     # 5) Create a binary mask where mag thresholds are met
     binary_output = np.zeros_like(gradmag)
     binary_output[(gradmag >= mag_thresh[0]) & (gradmag <= mag_thresh[1])] = 1
 
+#    plt.imshow(binary_output, cmap='gray')
+#    plt.show()
+    
     # 6) Return this mask as your binary_output image
     return binary_output
 
@@ -79,9 +89,12 @@ def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
 
     # Apply the following steps to img
     # 1) Convert to grayscal
+    # 1) Convert to grayscale
     if img.shape[-1] == 3:
         # Convert to grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    elif np.max(img) == 1:
+        gray = img*255
     else:
         gray = img
 
@@ -98,7 +111,9 @@ def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
     binary_output = np.zeros_like(absgraddir)
     binary_output[(absgraddir >= thresh[0]) & (absgraddir <= thresh[1])] = 1
     binary_output = binary_output.astype(int)
+
     # 6) Return this mask as your binary_output image
+    binary_output = cv2.blur(binary_output, (7, 7))
     return binary_output
 
 

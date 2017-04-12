@@ -1,14 +1,14 @@
 import numpy as np
 import cv2
 
-cap = cv2.VideoCapture('challenge_video2.mp4')
+cap = cv2.VideoCapture('challenge_video3.mp4')
 i = 0
 
 while(cap.isOpened()):
     ret, frame = cap.read()
 
-    if i % 5 == 0:
-        outname = 'test_challenge2/' + str(int(i/5)) + '.jpg'
+    if i % 2 == 0:
+        outname = 'test_challenge3/' + str(int(i)) + '.jpg'
         print(outname)
         cv2.imwrite(outname, frame)
     i += 1

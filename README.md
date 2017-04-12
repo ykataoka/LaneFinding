@@ -86,8 +86,10 @@ One of the test images like this one.  The color thresholding steps
 ![alt text][image_binary]
 
 In the end, I used a combination of color and gradient thresholds to
-generate a binary image. I used the simple white ratio logic to
-determine the best combination pattern.
+generate a binary image. To give the more flexibility to determine the
+best combination, I ensembled the 4 different combinations; consider 1
+if more than 2 of combnation agrees at each pixels.
+
 
 #### 3. Perspective Transform
 
@@ -111,9 +113,22 @@ This resulted in the following source and destination points:
 
 ![alt text][image4]
 
-####4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
+#### 4. Lane Detection
 
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
+Using the bird-eye view image, I used window search techniques to find
+the most probable lanes. The window size is tweaked to capture more
+precise information.
+
+Then I fittd my lane lines with a 2nd order polynomial kinda like
+this:
+
+For sanity,
+
+* drop the detection if it is outside of the mirgin at either of two
+  check points.(y = 180, 719)
+
+* average filter using 5 past data
+
 
 ![alt text][image5]
 

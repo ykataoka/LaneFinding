@@ -31,13 +31,19 @@ from warp import corners_unwarp
 # lane detection
 from window_search import find_lanes
 from window_search import find_window_centroids
+from window_search import line_and_margin
 from curve import find_quadcoeff_lane
 from curve import convert_radius
 # from curve import get_two_lines
 
 # global variables
 j = 0
+prev_result = None
+prev_warp = None
+skip_cnt = 0
 
+# print everything
+#np.set_printoptions(threshold=np.inf)
 
 # Define a class to receive the characteristics of each line detection
 class Line():
@@ -71,25 +77,28 @@ class Line():
         self.diffs = np.array([0, 0, 0], dtype='float')
 
         # x values for detected line pixels
-        self.allx = None
+        self.allx = [0] * 720
 
         # y values for detected line pixels
-        self.ally = None
+        self.ally = [0] * 720
 
-    def update_recent_x(self, x_new):
+    def update_recent_x(self):
         if len(self.recent_xfitted) > self.N:
             self.recent_xfitted.pop(0)
 
         # update average x
         self.bestx = np.average(self.recent_xfitted)
+#        print(self.recent_xfitted)
 
-    def update_recent_fit(self, fit):
+    def update_recent_fit(self):
         if len(self.current_fit) > self.N:
             self.current_fit.pop(0)
 
-        # update average x
+        # update average fit
         self.best_fit = np.sum(self.current_fit, axis=0) \
                         / len(self.current_fit)
+#        print(self.current_fit)
+
 
 # Define the break function
 class BreakIt(Exception):
@@ -103,92 +112,166 @@ def lane_preprocess(img):
     @return : Lane overlayed img
     """
     global j
+    global prev_result
+    global prev_warp
+    global skip_cnt
     try:
         """
         2. "Distortion Correction"
         """
+        if (exp_mode == 'movie') | (exp_mode == 'video'):
+            img = img[..., ::-1]
         undist = cv2.undistort(img, mtx, dist, None, mtx)
 
         """
         3-a. Color Transformation
         """
-        colorH_bin = HLS_thresh(undist, color='H',
-                                thresh=(10, 40))
-        colorS_bin = HLS_thresh(undist, color='S',
-                                thresh=(50, 255))
-        colorL_bin = HLS_thresh(undist, color='L',
-                                thresh=(200, 255))
-        colorR_bin = RGB_thresh(undist, color='R',
-                                thresh=(180, 255))
-        colorY_bin = np.zeros_like(colorR_bin)
-        colorY_bin[((colorS_bin == 1) & (colorH_bin == 1))] = 1
-        colorY_bin[((colorS_bin == 1) & (colorH_bin == 1))] = 1
+        colorH_bin = HLS_thresh(undist, color='H', thresh=(10, 40))  # yellow
+        colorS_bin = HLS_thresh(undist, color='S', thresh=(0, 30))  # white
+        colorS_bin2 = HLS_thresh(undist, color='S', thresh=(100, 255))
+        colorL_bin = HLS_thresh(undist, color='L', thresh=(150, 255))
+        colorL_bin2 = HLS_thresh(undist, color='L', thresh=(1, 255))
+        colorR_bin = RGB_thresh(undist, color='R', thresh=(180, 255))
+
 
         """
         3-b. Gradient Transformation
         """
-        gradX_bin = abs_sobel_thresh(undist, orient='x',
-                                     thresh_min=20, thresh_max=100)
-        gradY_bin = abs_sobel_thresh(undist, orient='y',
-                                     thresh_min=20, thresh_max=100)
-        magXY_bin = mag_thresh(undist, sobel_kernel=3,
-                               mag_thresh=(15, 200))
-        dir_bin = dir_threshold(undist, sobel_kernel=5,
-                                thresh=(0.8, 1.2))
-        
+#        gradX_bin = abs_sobel_thresh(undist, orient='x',
+#                                     thresh_min=20, thresh_max=100)
+#        gradY_bin = abs_sobel_thresh(undist, orient='y',
+#                                     thresh_min=20, thresh_max=100)
+        magXY_bin = mag_thresh(undist, sobel_kernel=3, mag_thresh=(5, 100))
+        dir_bin = dir_threshold(undist, sobel_kernel=5, thresh=(0.8, 1.2))
+
         """
         3-c. Combination
         """
-        comb1 = np.zeros_like(magXY_bin)
-        comb1[((colorY_bin == 1) | (colorL_bin == 1))] = 1
-        comb2 = np.zeros_like(dir_bin)
-        comb2[(dir_bin == 1) & (magXY_bin == 1)] = 1
-#        comb2[((colorY_bin == 1) | (colorL_bin == 1) | (colorR_bin == 1)) &
-#              (dir_XY_bin)] = 1
-#        comb4 = np.zeros_like(magXY_bin)
-#        comb4[((colorS_bin == 1) & (colorR_bin == 1))
-#              | ((colorH_bin == 1) & (magXY_bin == 1))] = 1
-        comb3 = np.zeros_like(magXY_bin)
-        comb3[((colorY_bin == 1) | (colorL_bin == 1) | (colorR_bin == 1))] = 1
-        comb4 = np.zeros_like(magXY_bin)
-        comb4[((colorS_bin == 1) | (colorR_bin == 1))
-              | ((colorH_bin == 1) & (magXY_bin == 1))] = 1
+        # find color yellow
+        colorY_bin = np.zeros_like(colorR_bin)
+        colorY_bin[(colorH_bin == 1) & (colorS_bin2 == 1)] = 1
+#        colorY_bin = dir_threshold(colorY_bin, sobel_kernel=5,
+#                                   thresh=(0.8, 1.2))
+
+        # refine white line
+        colorW_bin = np.zeros_like(colorR_bin)
+        colorW_bin[(colorL_bin == 1) &
+                   (colorR_bin == 1) &
+                   (colorS_bin == 1) &
+                   (dir_bin == 1)] = 1
+
+        # comb1 : color is yellow or white
+        comb1 = np.zeros_like(colorR_bin)
+        comb1[((colorY_bin == 1) | (colorW_bin == 1))] = 1
+
+        # comb2 : Color(Y | W | R) + direction filter
+        comb2 = np.zeros_like(colorR_bin)
+        comb2[((colorY_bin == 1) | (colorW_bin == 1) | (colorR_bin == 1))] = 1
+        comb2 = dir_threshold(comb2, sobel_kernel=5, thresh=(0.7, 1.3))
+
+        # comb3 : gradient based detection
+        comb3 = np.zeros_like(colorR_bin)
+        comb3[(dir_bin == 1) & (magXY_bin == 1)] = 1
+        comb3 = cv2.blur(comb3, (7, 7))
+
+        # comb4 : edge detection
+        comb4 = np.zeros_like(colorR_bin)
+        comb4 = dir_threshold(magXY_bin, sobel_kernel=5, thresh=(0.7, 1.3))
+        comb4 = cv2.blur(comb4, (7, 7))
+
+        # decide which combination to be used
+
+        # a. threshold base
+#        combs = [comb1, comb2, comb3, comb4]
+#        diffs = []
+#        white_v = 5000000  # value of the white range (set by experiment)
+#        for comb in combs:
+#            top_down, birdM, birdMinv = corners_unwarp(comb, 2, 2, mtx, dist)
+#            diffs.append(abs(np.sum(top_down) - white_v))
+#        print('chosen combination')
+#        print(np.argmin(np.array(diffs)) + 1)
+#        comb = combs[np.argmin(np.array(diffs))]
+
+        # b. majority base
+#        agree_num = 2
+#        comb = np.zeros_like(comb1)
+#        comb = comb1 + comb2 + comb3 + comb4
+#        comb[comb < agree_num] = 0
+#        comb[comb >= agree_num] = 1
+
+        # c. priority base
+        agree_num = 2
+        combA = comb1 + comb2
+        combA[combA < agree_num] = 0
+        combA[combA >= agree_num] = 1
+
+        combB = comb1 + comb2 + comb3 + comb4
+        combB[combB < agree_num] = 0
+        combB[combB >= agree_num] = 1
+
+#        """
+#        4. "Perspective Transform" (bird-eye view)
+#        """
+#        # perspective transformation to the chosen one
+#        top_down, birdM, birdMinv = corners_unwarp(comb, 2, 2, mtx, dist)
+#
+#        """
+#        5. "Lane Detection"
+#        """
+#        # window settings
+#        window_width = 30
+#        window_height = 20  # Break image into 9 vertical layers (height 720)
+#        margin = 15  # slide window width for searching
+#
+#        # Find the centroids for each window
+#        window_centroids, l_center, r_center = find_window_centroids(top_down,
+#                                                                     window_width,
+#                                                                     window_height,
+#                                                                     margin)
 
         """
         4. "Perspective Transform" (bird-eye view)
         """
-        # decide which combination to be used
-        combs = [comb1, comb2, comb3, comb4]
-        diffs = []
-        white_v = 5000000  # value of the white range (set by experiment)
-        for comb in combs:
-            top_down, birdM, birdMinv = corners_unwarp(comb, 2, 2, mtx, dist)
-            diffs.append(abs(np.sum(top_down) - white_v))
-
-        print('chosen combination')
-        print(np.argmin(np.array(diffs)) + 1)
-        comb = combs[np.argmin(np.array(diffs))]
-
         # perspective transformation to the chosen one
-        top_down, birdM, birdMinv = corners_unwarp(comb, 2, 2, mtx, dist)
+        top_downA, birdMA, birdMinvA = corners_unwarp(combA, 2, 2, mtx, dist)
+        top_downB, birdMB, birdMinvB = corners_unwarp(combB, 2, 2, mtx, dist)
 
         """
         5. "Lane Detection"
         """
         # window settings
-        window_width = 50
-        window_height = 40  # Break image into 9 vertical layers (height 720)
-        margin = 80  # slide window width for searching
+        window_w = 30
+        window_h = 20  # Break image into 9 vertical layers (height 720)
+        margin = 15  # slide window w for searching
 
         # Find the centroids for each window
-        window_centroids, l_center, r_center = find_window_centroids(top_down,
-                                                                     window_width,
-                                                                     window_height,
-                                                                     margin)
+#        plt.imshow(top_downA)
+#        plt.show()
+        centroids, l_center, r_center = find_window_centroids(top_downA,
+                                                              window_w,
+                                                              window_h,
+                                                              margin)
+        img_lane, img_both, num_l, num_r = find_lanes(top_downA, centroids, window_w, window_h)
+
+        C = np.array(centroids)
+        if (num_l < 10) | (num_r < 10):
+            centroids, l_center, r_center = find_window_centroids(top_downB,
+                                                                  window_w,
+                                                                  window_h,
+                                                                  margin)
+            img_lane, img_both, num_l, num_r = find_lanes(top_downB, centroids, window_w, window_h)
+            birdMinv = birdMinvB
+            comb = combB
+        else:
+            birdMinv = birdMinvA
+            comb = combA
+
+        # debug
+        birdMinv = birdMinvB
+        comb = combB
 
         # find lane path
-        img_lane, img_both = find_lanes(top_down, window_centroids,
-                                        window_width, window_height)
+#        img_lane, img_both = find_lanes(top_down, centroids, window_w, window_h)
 
         """
         6. "Curvature Detection"
@@ -196,38 +279,61 @@ def lane_preprocess(img):
         # Compute Quadratic Lines
         l_fit, l_x, l_y, r_fit, r_x, r_y = find_quadcoeff_lane(img_lane)
 
-        # if fitting did not work, let's skip unreliable data
+        # if fitting did not work as all, let's skip unreliable data
         if l_fit is None:
             print("error in find_quadcoeff_lane")
-            cv2.imwrite('test_preprocess/bug_undistort'+str(j)+'.jpg',
-                        undist[..., ::-1])
-            j = j + 1
             raise BreakIt
 
-        # if the fitting line is not inside the boundary
-        elif :
-            L_Line.
+        # if the fitting line is not inside of the boundary
+        margin1, margin2 = 100*skip_cnt, 50*skip_cnt
+        if j < L_Line.N:
+            pass
+
+#        elif skip_cnt > 8:
+#            L_Line.recent_xfitted = []
+#            L_Line.current_fit = []
+#            R_Line.recent_xfitted = []
+#            R_Line.current_fit = []
+#            j = 0
+#
+#        else:
+#            check_point_y = int(undist.shape[0] * 1. / 4.)
+#            l_dif = np.abs(L_Line.allx[check_point_y] - l_x[check_point_y])
+#            r_dif = np.abs(R_Line.allx[check_point_y] - r_x[check_point_y])
+#            print('l_dif, r_dif @(1/4) = ' + str(l_dif) + ', ' + str(r_dif))
+#            if (l_dif > margin1) | (r_dif > margin1):
+#                print("out of the margin for new fitting line")
+#                skip_cnt += 1
+#                raise BreakIt
+#
+#            check_point_y = int(undist.shape[0] * 3.9 / 4.)
+#            l_dif = np.abs(L_Line.allx[check_point_y] - l_x[check_point_y])
+#            r_dif = np.abs(R_Line.allx[check_point_y] - r_x[check_point_y])
+#            print('l_dif, r_dif @(4/4)= ' + str(l_dif) + ', ' + str(r_dif))
+#            if (l_dif > margin2) | (r_dif > margin2):
+#                print("out of the margin for new fitting line")
+#                skip_cnt += 1
+#                raise BreakIt
+
+        # reset skip_cnt, if successfully detected
+        skip_cnt = 0
 
         # Update data if the fitting goes well
-        else:
-            L_Line.recent_xfitted.append(l_x[-1])
-            L_Line.allx = l_x
-            L_Line.ally = l_y
-            L_Line.current_fit.append(l_fit)
-            L_Line.diffs = (L_Line.diffs - l_fit)
+        L_Line.recent_xfitted.append(l_x[-1])
+        L_Line.current_fit.append(l_fit)
+        L_Line.diffs = (L_Line.diffs - l_fit)
 
-            R_Line.allx = r_x
-            R_Line.ally = r_y
-            R_Line.current_fit.append(r_fit)
-            R_Line.diffs = (R_Line.diffs - r_fit)
+        R_Line.recent_xfitted.append(r_x[-1])
+        R_Line.current_fit.append(r_fit)
+        R_Line.diffs = (R_Line.diffs - r_fit)
 
-        # Sanitization : average position (x, 720) using the past N data
-        L_Line.update_recent_x(l_x[-1])  # update L_Line.bestx
-        R_Line.update_recent_x(r_x[-1])  # update R_Line.bestx
+        # filter : average position (x, 720) using the past N data
+        L_Line.update_recent_x()  # update L_Line.bestx
+        R_Line.update_recent_x()  # update R_Line.bestx
 
-        # Sanitization : average fit parameter using the past N data
-        L_Line.update_recent_fit(L_Line.current_fit)  # update L_Line.best_fit
-        R_Line.update_recent_fit(R_Line.current_fit)  # update R_Line.best_fit
+        # filter : average fit parameter using the past N data
+        L_Line.update_recent_fit()  # update L_Line.best_fit
+        R_Line.update_recent_fit()  # update R_Line.best_fit
 
         # find filtered best parameter
         r_l_y = np.array(range(0, 720, 1))
@@ -235,6 +341,11 @@ def lane_preprocess(img):
         r_fit_fil = R_Line.best_fit
         l_x_fil = l_fit_fil[0]*r_l_y*r_l_y + l_fit_fil[1]*r_l_y + l_fit_fil[2]
         r_x_fil = r_fit_fil[0]*r_l_y*r_l_y + r_fit_fil[1]*r_l_y + r_fit_fil[2]
+
+        L_Line.allx = l_x_fil
+        R_Line.allx = r_x_fil
+        L_Line.ally = r_l_y
+        R_Line.ally = r_l_y
 
         # find car location
         offset = img_lane.shape[1]/2
@@ -251,35 +362,48 @@ def lane_preprocess(img):
         """
         7. Create an image to draw the lines on undistorted image
         """
-        warp_zero = np.zeros_like(comb).astype(np.uint8)
-        color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+        # analytics result in the bird-eye view
+        overlay = line_and_margin(l_x_fil, r_l_y, r_x_fil, r_l_y,
+                                  margin1, 'red', undist)
 
-        # Recast the x and y points into usable format for cv2.fillPoly()
-        pts_left = np.array([np.transpose(np.vstack([l_x_fil,
-                                                     r_l_y]))])
-        pts_right = np.array([np.flipud(np.transpose(np.vstack([r_x_fil,
-                                                                r_l_y])))])
-        pts = np.hstack((pts_left, pts_right))
-
-        # Draw the lane onto the warped blank image
-        color_warp = cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
-
-        # Warp the blank back to original image space using Minv
-        newwarp = cv2.warpPerspective(color_warp, birdMinv,
+        # perspective transformation
+        newwarp = cv2.warpPerspective(overlay, birdMinv,
                                       (undist.shape[1], undist.shape[0]))
+
+#        warp_zero = np.zeros_like(comb).astype(np.uint8)
+#        color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+#
+#        # Recast the x and y points into usable format for cv2.fillPoly()
+#        pts_left = np.array([np.transpose(np.vstack([l_x_fil,
+#                                                     r_l_y]))])
+#        pts_right = np.array([np.flipud(np.transpose(np.vstack([r_x_fil,
+#                                                                r_l_y])))])
+#        pts = np.hstack((pts_left, pts_right))
+#
+#        # Draw the lane onto the warped blank image
+#        color_warp = cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
+#
+#        # Warp the blank back to original image space using Minv
+#        newwarp = cv2.warpPerspective(color_warp, birdMinv,
+#                                      (undist.shape[1], undist.shape[0]))
+
+        # masking some part
         newwarp[:360, :] = 0  # mask some part
+
+        # masking some part
+        prev_warp = newwarp
 
         # Combine the result with the original image
         result = cv2.addWeighted(undist, 1, newwarp, 0.3, 0)
 
         # Add Data
-        rad_txt = "Radius[m] = (" + "{0:.2f}".format(l_rad_real) + ", " \
-                  + "{0:.2f}".format(r_rad_real) + ")"
-        dst_txt = "Difference[m] = " + "{0:.2f}".format(x_mid)
-        cv2.putText(result, rad_txt, (50,  80),
-                    cv2.FONT_HERSHEY_DUPLEX, 1.5, 1, thickness=4)
-        cv2.putText(result, dst_txt, (50, 150),
-                    cv2.FONT_HERSHEY_DUPLEX, 1.5, 1, thickness=4)
+#        rad_txt = "Radius[m] = (" + "{0:.2f}".format(l_rad_real) + ", " \
+#                  + "{0:.2f}".format(r_rad_real) + ")"
+#        dst_txt = "Difference[m] = " + "{0:.2f}".format(x_mid)
+#        cv2.putText(result, rad_txt, (50,  80),
+#                    cv2.FONT_HERSHEY_DUPLEX, 1.5, 1, thickness=4)
+#        cv2.putText(result, dst_txt, (50, 150),
+#                    cv2.FONT_HERSHEY_DUPLEX, 1.5, 1, thickness=4)
 
         # Plot
         if exp_mode == 'image':
@@ -295,20 +419,16 @@ def lane_preprocess(img):
             ax1.set_title('Original Image', fontsize=10)
             ax2.imshow(colorY_bin, cmap='gray')
             ax2.set_title('Color Y (yellow)', fontsize=10)
-            #        ax2.imshow(colorS_bin, cmap='gray')
-            #        ax2.set_title('Color S (saturation)', fontsize=10)
-            ax3.imshow(colorR_bin, cmap='gray')
-            ax3.set_title('Color R (Red)', fontsize=10)
-            #        ax4.imshow(colorH_bin, cmap='gray')
-            #        ax4.set_title('Color H (Hue)', fontsize=10)
-            ax4.imshow(colorL_bin, cmap='gray')
-            ax4.set_title('Color White (Lightness is big)', fontsize=10)
+            ax3.imshow(colorW_bin, cmap='gray')
+            ax3.set_title('Color White', fontsize=10)
+            ax4.imshow(colorR_bin, cmap='gray')
+            ax4.set_title('Color R (Red)', fontsize=10)
 
             # Gradient Transformation
-            ax5.imshow(gradY_bin, cmap='gray')
-            ax5.set_title('Gradient x binary', fontsize=10)
-            ax6.imshow(gradX_bin, cmap='gray')
-            ax6.set_title('Gradient y binary', fontsize=10)
+            ax5.imshow(colorS_bin, cmap='gray')
+            ax5.set_title('Saturation', fontsize=10)
+            ax6.imshow(colorL_bin, cmap='gray')
+            ax6.set_title('Lightness', fontsize=10)
             ax7.imshow(magXY_bin, cmap='gray')
             ax7.set_title('Gradient x&y magnitude', fontsize=10)
             ax8.imshow(dir_bin, cmap='gray')
@@ -325,33 +445,46 @@ def lane_preprocess(img):
             ax12.set_title('combination 4', fontsize=10)
 
             # TopDown
-            ax13.imshow(top_down, cmap='gray')
-            ax13.set_title('top_down', fontsize=10)
+            ax13.imshow(comb, cmap='gray')
+            ax13.set_title('Final Combination', fontsize=10)
             ax14.imshow(img_both)
             ax14.set_title('lane window and line', fontsize=10)
+            ax15.imshow(overlay)
+            ax15.set_title('detected line', fontsize=10)
 
             # Final result
-            ax15.imshow(result[..., ::-1])
-            ax15.set_title('Final Result', fontsize=10)
+            ax16.imshow(result[..., ::-1])
+            ax16.set_title('Final Result', fontsize=10)
+            cv2.imwrite('test_challenge2/test' + str(j) + '.jpg', result)
 
             # Show
             plt.subplots_adjust(left=0.02, right=0.98, top=0.95, bottom=0.05)
             plt.show()
-#            plt.clf()
             plt.close()
 
+        prev_result = result
+        j += 1
+
+        if (exp_mode == 'movie') | (exp_mode == 'video'):
+            return result[..., ::-1]
         return result
 
     except BreakIt:
-        return img
+        if prev_result is None:
+            return undist
+        else:
+            result = cv2.addWeighted(undist, 1, prev_warp, 0.3, 0)
+            return result
 
 
 # Experiment Mode 'video' : output video, 'image' : proces test_images/*
-exp_mode = 'video'
+# exp_mode = 'image'
+# L_Line = Line(1)
+# R_Line = Line(1)
 
-# create Line instance
-L_Line = Line(10)
-R_Line = Line(10)
+exp_mode = 'video'
+L_Line = Line(5)
+R_Line = Line(5)
 
 # 1. "Camera Calibration" for undistortion (see the calibration.py)
 calibration = pl.load(open("camera_cal/calibration.p", "rb"))
@@ -370,28 +503,42 @@ if exp_mode == 'image':
 
     # read image directory depending on challenge
     # img_files = glob.glob('test_images/*')      # challenge 1
-    img_files = glob.glob('test_challenge2/*')  # challenge 2
+    img_files = glob.glob('test_challenge3/*')  # challenge 2
     for img_file in img_files:
         # write the file name
         print(img_file)
 
         # init the line class to avoid filter
-        L_Line = Line(5)
-        R_Line = Line(5)
+        L_Line = Line(1)
+        R_Line = Line(1)
 
         # Read Test Image
         img = cv2.imread(img_file)
 
-        # Preprocess
+        # Preprocess and show result
         out = lane_preprocess(img)
 
 """
 output to video
 """
-if exp_mode == ('video' | 'movie'):
-    white_output = 'test2.mp4'
+if (exp_mode == 'video') | (exp_mode == 'movie'):
+    white_output = 'test.mp4'
     # clip1 = VideoFileClip("project_video2.mp4")
-    clip1 = VideoFileClip("challenge_video2.mp4")
+#    clip1 = VideoFileClip("challenge_video2.mp4")
+    # clip1 = VideoFileClip("challenge_video3.mp4")
+    clip1 = VideoFileClip("challenge_video.mp4")
+
+    # data from clip1
+#    A1 = clip1.get_frame(0) #RGB!!
+
+    # data from the viode dump
+#    A2 = cv2.imread('test_challenge3/0.jpg', )  # BGR
+#    plt.imshow(A1)
+#    plt.show()
+#    plt.imshow(A2[..., ::-1])
+#    plt.show()
+
+#    input()
     # clip1 = VideoFileClip("harder_challenge_video.mp4")
     white_clip = clip1.fl_image(lane_preprocess)
     white_clip.write_videofile(white_output, audio=False)

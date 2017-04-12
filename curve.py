@@ -18,35 +18,39 @@ def find_quadcoeff_lane(img):
 
     # convert img to gray scale data
     img_arr_BGR = np.array(img)
-    img_arr = img_arr_BGR[:, :, 1]  # extract only green
-#    plt.imshow(img_arr)
+    l_img_arr = img_arr_BGR[:, :, 1]  # extract only green
+    r_img_arr = img_arr_BGR[:, :, 2]  # extract only green
+#    plt.imshow(l_img_arr)
+#    plt.show()
+#    plt.imshow(r_img_arr)
 #    plt.show()
 
     # bug? why over 255??
-    img_arr[img_arr > 255] = 255
-    lenX = img_arr.shape[1]
-    lenY = img_arr.shape[0]
+#    img_arr[img_arr > 255] = 255
+    lenX = img.shape[1]
+    lenY = img.shape[0]
     thres = int(lenX / 2)
 
     # find left average x for each
-    l_arr = img_arr[:, :thres]
+#    l_arr = img_arr[:, :thres]
     l_plotX = []
     l_plotY = []
     for y in range(lenY):
-        if sum(l_arr[y, :]) != 0:
-            ave_x = find_average_index(l_arr[y, :])
+        if sum(l_img_arr[y, :]) != 0:
+            ave_x = find_average_index(l_img_arr[y, :])
             l_plotX.append(ave_x)
             l_plotY.append(y)
         else:
             pass
 
     # find right average x for each y
-    r_arr = img_arr[:, thres:]
+#    r_arr = img_arr[:, thres:]
     r_plotX = []
     r_plotY = []
     for y in range(lenY):
-        if sum(r_arr[y, :]) != 0:
-            ave_x = find_average_index(r_arr[y, :]) + thres
+        if sum(r_img_arr[y, :]) != 0:
+#            ave_x = find_average_index(r_img_arr[y, :]) + thres
+            ave_x = find_average_index(r_img_arr[y, :])
             r_plotX.append(ave_x)
             r_plotY.append(y)
         else:
