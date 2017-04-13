@@ -24,6 +24,11 @@
 [image6]: ./examples/example_output.jpg "Output"
 [video1]: ./project_video.mp4 "Video"
 
+[result0]: ./sample_data/result0.jpg "straight"
+[result1]: ./sample_data/result1.jpg "curve"
+[result2]: ./sample_data/result2.jpg "many edges"
+[result3]: ./sample_data/result3.jpg "shadows"
+
 ## Code
 * P4.py - main code
 * calibration.py - dump calibration ddata for undistortion
@@ -83,12 +88,34 @@ One of the test images like this one.  The color thresholding steps
  described in `sobel.py`.  The combination logics are described in
  `P4.py` line around 135.
 
-![alt text][image_binary]
-
 In the end, I used a combination of color and gradient thresholds to
-generate a binary image. To give the more flexibility to determine the
-best combination, I ensembled the 4 different combinations; consider 1
-if more than 2 of combnation agrees at each pixels.
+generate a binary image. My ideas follows
+
+* comb1 : Yellow line or White line
+* comb2 : direction_threshold(Yellow or White or Red)
+* comb3 : blur(direction_thres or XY_thres) (detection for very slight edge even in shade) 
+* comb4 : blur(direction_thres(XY_thres))
+
+(All results are shown at the end of README.md)
+
+
+comb1 and comb 2 are meant for detecting lines accurately
+comb3 and comb 4 are meant for detecting edges roughly
+
+Assuming comb1 and comb2 have higher priority to use,
+first the intersection of comb1 and comb2 are used for detection.
+If this detects enough data (probably lane), just use two of them.
+
+If the intersection of comb1 and comb2 does not detect enough data, I
+additionaly consider comb3 and comb4 and ensemble 4 of them.  If 2 of
+4 combinations agrees, then the pixel is considered as lane. (Code around 200)
+
+This gives more flexibility to use only color combination when the
+image is clear and to use both color and edge combination when the
+image is shadowed.
+
+Of course, if the lane is labeled, we may be able to optimize the obove
+combination logic depending on the image feature using machine learning.
 
 
 #### 3. Perspective Transform
@@ -105,95 +132,91 @@ This resulted in the following source and destination points:
 
 | Source        | Destination   | 
 |:-------------:|:-------------:| 
-| 565, 460      | 150, 30        | 
-| 720, 450      | 1130, 30      |
-| 1280, 720     | 1130, 690      |
-| 0, 720        | 150, 690        |
+| 535, 500      | 100, 0        | 
+| 760, 500      | 1180, 0      |
+| 1280, 720     | 1180, 720      |
+| 0, 720        | 100, 720        |
 
-
-![alt text][image4]
 
 #### 4. Lane Detection
 
 Using the bird-eye view image, I used window search techniques to find
 the most probable lanes. The window size is tweaked to capture more
-precise information.
+precise information. Plus, the margin used for searching gets bigger
+everytime the window search fails. In this way, we focus on the narrow
+searching space when close to detected line.(and vice varsa)
 
-Then I fittd my lane lines with a 2nd order polynomial kinda like
-this:
+Then I fittd my lane lines with a 2nd order polynomial.
 
 For sanity,
 
-* drop the detection if it is outside of the mirgin at either of two
-  check points.(y = 180, 719)
+* if the detected centroids is less than 10, expand combination(loosen
+  the conditions) and find the lane images again (code around 210)
 
-* average filter using 5 past data
+* drop the detection result if it is outside of the mirgin at two
+  check points.(y = 180, 719) (code around 250)
+
+* average filter using 5 past data (code around 280)
 
 
-![alt text][image5]
+#### 5. Calculation of the radius of curvature of the lane and the position of the vehicle from center.
 
-####5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
+I did this in lines 68 through 97 in my code in `curve.py`
 
-I did this in lines # through # in my code in `my_other_file.py`
+#### 6. Example image of the result
 
-####6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
+I overlaid the result on the original image.  I implemented this step
+in lines 315 through 343 in my code in `P4.py`.  Here is an example of
+my result on a test image:
 
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
+* example0. simple straight line : The bird eye view is parallel.
+![alt text][result0]
 
-![alt text][image6]
+* example1. simple curve : 
+![alt text][result1]
+
+* example2. image with a lot of edge distraction : you may see the final combination is not distracted by other edges. This is because the algorithm which prioritize color mapping higher.
+![alt text][result2]
+
+* example3. image with a lot of shadow : Even in the shadow area, it captures very slight edges. When color binary does not perform well, it considers the edge information too. This may cause noisy result, but it successfully capture the correct lane.
+![alt text][result3]
 
 ---
 
-###Pipeline (video)
+### Pipeline (video)
 
-####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
+#### 1. video result
 
-Here's a [link to my video result](./project_video.mp4)
+Here's a link to my video result for
+[task1 (project_video.mp4)](./result_1.mp4)
+
+And, here's a link to my video result for
+[task2 (challenge_video.mp4)](./result_2.mp4)
 
 ---
 
 ###Discussion
 
-####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
+#### 1. Where to fail my pipeline
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+* My algorithm may result in noisy performance when color is not
+  completely detected and rely on only edge information. As I
+  mentioned above, the first priority is color. If color is not
+  accurately detected, then the edge information is considered.  This
+  combination works fine. When color is not detected at all, the
+  algorithm completely rely on edge information, whcih tends to be noisy.
+
+* When high latency is required. As I use the average filter, there is
+  a time-delay to respond to the measuremnt. When control is
+  considered, this time-delay will be critical, making the system 'unstable'.
 
 
+#### 2. Possible solution
 
-
-
-## Advanced Lane Finding
-[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
-
-
-In this project, your goal is to write a software pipeline to identify the lane boundaries in a video, but the main output or product we want you to create is a detailed writeup of the project.  Check out the [writeup template](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) for this project and use it as a starting point for creating your own writeup.  
-
-Creating a great writeup:
----
-A great writeup should include the rubric points as well as your description of how you addressed each point.  You should include a detailed description of the code used in each step (with line-number references and code snippets where necessary), and links to other supporting documents or external references.  You should include images in your writeup to demonstrate how your code works with examples.  
-
-All that said, please be concise!  We're not looking for you to write a book here, just a brief description of how you passed each rubric point, and references to the relevant code :). 
-
-You're not required to use markdown for your writeup.  If you use another method please just submit a pdf of your writeup.
-
-The Project
----
-
-The goals / steps of this project are the following:
-
-* Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.
-* Apply a distortion correction to raw images.
-* Use color transforms, gradients, etc., to create a thresholded binary image.
-* Apply a perspective transform to rectify binary image ("birds-eye view").
-* Detect lane pixels and fit to find the lane boundary.
-* Determine the curvature of the lane and vehicle position with respect to center.
-* Warp the detected lane boundaries back onto the original image.
-* Output visual display of the lane boundaries and numerical estimation of lane curvature and vehicle position.
-
-The images for camera calibration are stored in the folder called `camera_cal`.  The images in `test_images` are for testing your pipeline on single frames.  If you want to extract more test images from the videos, you can simply use an image writing method like `cv2.imwrite()`, i.e., you can read the video in frame by frame as usual, and for frames you want to save for later you can write to an image file.  
-
-To help the reviewer examine your work, please save examples of the output from each stage of your pipeline in the folder called `ouput_images`, and include a description in your writeup for the project of what each image shows.    The video called `project_video.mp4` is the video your pipeline should work well on.  
-
-The `challenge_video.mp4` video is an extra (and optional) challenge for you if you want to test your pipeline under somewhat trickier conditions.  The `harder_challenge.mp4` video is another optional challenge and is brutal!
-
-If you're feeling ambitious (again, totally optional though), don't stop there!  We encourage you to go out and take video of your own, calibrate your camera and show us how you would implement this project from scratch!
+* If each line is marked as the label, we can take machine learning
+  approach.  The feature is the combinations of the binary images
+  using color or gradient.  Machine leanring enables to find the best
+  weights to each combination.  Maybe, we need to clustering approach
+  to categorize the image type (shadowed, too bright, clear) before
+  the above machine learning. The model should be wisely chosen
+  depending on the situation.

@@ -20,19 +20,10 @@ def find_quadcoeff_lane(img):
     img_arr_BGR = np.array(img)
     l_img_arr = img_arr_BGR[:, :, 1]  # extract only green
     r_img_arr = img_arr_BGR[:, :, 2]  # extract only green
-#    plt.imshow(l_img_arr)
-#    plt.show()
-#    plt.imshow(r_img_arr)
-#    plt.show()
 
-    # bug? why over 255??
-#    img_arr[img_arr > 255] = 255
-    lenX = img.shape[1]
     lenY = img.shape[0]
-    thres = int(lenX / 2)
 
     # find left average x for each
-#    l_arr = img_arr[:, :thres]
     l_plotX = []
     l_plotY = []
     for y in range(lenY):
@@ -44,12 +35,10 @@ def find_quadcoeff_lane(img):
             pass
 
     # find right average x for each y
-#    r_arr = img_arr[:, thres:]
     r_plotX = []
     r_plotY = []
     for y in range(lenY):
         if sum(r_img_arr[y, :]) != 0:
-#            ave_x = find_average_index(r_img_arr[y, :]) + thres
             ave_x = find_average_index(r_img_arr[y, :])
             r_plotX.append(ave_x)
             r_plotY.append(y)
@@ -59,7 +48,6 @@ def find_quadcoeff_lane(img):
     # Check the availability
     if (len(l_plotX) == 0) | (len(r_plotX) == 0):
         return [None]*6
-
 
     # Fit a second order polynomial to pixel positions in each fake lane line
     plotY = np.array(range(0, 720, 1))
@@ -74,18 +62,6 @@ def find_quadcoeff_lane(img):
     r_fit = np.polyfit(r_plotY, r_plotX, 2)
     r_fitx = r_fit[0]*plotY*plotY + r_fit[1]*plotY + r_fit[2]
 
-#    # test plot
-#    plt.xlim(0, 1280)
-#    plt.ylim(0, 720)
-#    plt.imshow(img)
-#    plt.plot(l_plotX, l_plotY, color='red', linewidth=3)
-#    plt.plot(l_fitx, l_plotY, color='white', linewidth=2)
-#    plt.plot(r_plotX, r_plotY, color='blue', linewidth=3)
-#    plt.plot(r_fitx, r_plotY, color='white', linewidth=2)
-#    plt.gca().invert_yaxis()  # to visualize as we do the images
-#    plt.show()
-
-#    return [l_fit, l_fitx, l_plotY, r_fit, r_fitx, r_plotY]
     return [l_fit, l_fitx, plotY, r_fit, r_fitx, plotY]
 
 
@@ -114,7 +90,6 @@ def convert_radius(l_x, r_x, l_y, r_y):
     right_fit_cr = np.polyfit(r_y*ym_per_pix, r_x*xm_per_pix, 2)
 
     # Calculate the new radii of curvature
-#    y_eval = range(0, 720, 1)
     left_curverad = ((1 + (2*left_fit_cr[0]*l_y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
     right_curverad = ((1 + (2*right_fit_cr[0]*r_y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
     
@@ -122,9 +97,6 @@ def convert_radius(l_x, r_x, l_y, r_y):
 
 
 def get_two_lines(l_x, l_y, r_x, r_y, image):
-    #    mark_size = 3
-    #    mixed = cv2.addWeighted(warpage, 1, template, 0.5, 0.0)
-
     plt.xlim(0, 1280)
     plt.ylim(0, 720)
     plt.imshow(image)
@@ -150,6 +122,3 @@ if __name__ == '__main__':
 
     # convert radius to real-world coordinate
     l_rad_real, r_rad_real = convert_radius(l_x, r_x, l_y, r_y)
-
-#    # Test Plot
-#    line_img = get_two_lines(l_x, l_y, r_x, r_y, lanes)

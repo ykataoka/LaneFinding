@@ -28,35 +28,19 @@ def find_window_centroids(image, window_width, window_height, margin):
     """
     # Store the (left,right) window centroid positions per level
     window_centroids = []  # [(l_center, r_center), ...]
-    out_centroids = []  # [(y, l_center, r_center), ...] can be None
 
     # Create our window template that we will use for convolutions
     window = np.ones(window_width)
-
-    # find the two starting positions for the left & right lane and 
-    # then np.convolve the vertical image slice with the window template
-
-    # apply blur filter
-#    plt.imshow(image)
-#    plt.show()
-#    image = cv2.blur(image, (11, 11))
-#    image[image < 150] = 0
-#    plt.imshow(image)
-#    plt.show()
-
-    # Sum quarter bottom of image to get slice (shape = (Y-720, X-1280))
-    upperY = int(2*image.shape[0]/4)  # look at quarter bottom image
+    upperY = int(1*image.shape[0]/4)  # look at 3*quarter bottom image
     thresX = int(image.shape[1]/2)
 
+    # find the two starting positions for the left & right lane
     l_sum = np.sum(image[upperY:, :thresX], axis=0)
     l_center = np.argmax(np.convolve(window, l_sum)) - window_width/2
 
     r_sum = np.sum(image[upperY:, thresX:], axis=0)
     r_center = np.argmax(np.convolve(window, r_sum)) - window_width/2 \
                + int(image.shape[1]/2)
-
-    # Add what we found for the first layer
-#    window_centroids.append((l_center, r_center))
 
     # Go through each layer looking for max pixel locations
     num_level = (int)(image.shape[0]/window_height)
@@ -73,8 +57,7 @@ def find_window_centroids(image, window_width, window_height, margin):
         conv_signal = np.convolve(window, image_layer)
 
         l_margin = margin * l_miss_cnt
-        r_margin = margin * r_miss_cnt
-        
+        r_margin = margin * r_miss_cnt        
         # Find the best left centroid by using past left center as a reference
         # Use window_width/2 as offset
         # because convolution signal reference is at right side of window,
@@ -111,15 +94,6 @@ def find_window_centroids(image, window_width, window_height, margin):
             l_center_init = l_center
         if r_center_init is None:
             r_center_init = r_center
-
-#    # if the data is equivalent to *_center, remove the data
-#    out_centroids = []
-#    for center in window_centroids:
-#        if (center[0] == l_center) | (center[1] == r_center):
-#            pass
-#        else:
-#            out_centroids.append(center)
-#    return out_centroids
 
     return [window_centroids, l_center_init, r_center_init]
 
@@ -190,7 +164,7 @@ def find_lanes(image, centroids, window_width, window_height):
 
     num_left = np.sum(l_template) / (255 * window_width * window_height)
     num_right = np.sum(r_template) / (255 * window_width * window_height)
-    print(num_left, num_right)
+#    print(num_left, num_right)
     
     return [template, mixed, num_left, num_right]
 
@@ -259,7 +233,6 @@ if __name__ == '__main__':
                                              window_height,
                                              margin)
 
-    print(window_centroids)
     # find lane path
     img_lane, img_both = find_lanes(warped, window_centroids,
                                     window_width, window_height)

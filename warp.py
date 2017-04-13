@@ -21,9 +21,9 @@ def corners_unwarp(img, nx, ny, mtx, dist):
 #                      [250, 690]])
 
     # 4 corners in the image coordinate (image 2 next lane)
-    offset_tmp = - 0
-    src = np.float32([[535 - offset_tmp, 500],
-                      [760 + offset_tmp, 500],
+    offset_tmp = 30
+    src = np.float32([[535 - offset_tmp, 480],
+                      [760 + offset_tmp, 480],
                       [1280, 720],
                       [0, 720]])
 
